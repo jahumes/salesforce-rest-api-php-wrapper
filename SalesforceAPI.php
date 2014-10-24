@@ -1,9 +1,11 @@
 <?php
 /**
- * Created by IntelliJ IDEA.
- * User: jhumes
- * Date: 10/22/14
- * Time: 11:34 AM
+ * The Salesforce REST API PHP Wrapper
+ *
+ * This class connects to the Salesforce REST API and performs actions on that API
+ *
+ * @author Anthony Humes <jah.humes@gmail.com>
+ * @license GPL, or GNU General Public License, version 2
  */
 
 class SalesforceAPI {
