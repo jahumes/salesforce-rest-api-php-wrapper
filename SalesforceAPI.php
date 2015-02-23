@@ -8,15 +8,16 @@
  * @license GPL, or GNU General Public License, version 2
  */
 
-class SalesforceAPI {
+class SalesforceAPI extends APIAbstract {
     public
         $last_response;
     protected
-        $client_key,
+        $client_id,
         $client_secret,
         $instance_url,
         $base_url,
         $headers,
+        $return_type,
         $api_version;
     private
         $access_token,
@@ -30,28 +31,35 @@ class SalesforceAPI {
         METH_PUT    = 'PUT',
         METH_PATCH  = 'PATCH';
 
+    // Return types
     const
-        LOGIN_URL   = 'https://login.salesforce.com/services/oauth2/token',
+        RETURN_OBJECT  = 'object',
+        RETURN_ARRAY_K = 'array_k',
+        RETURN_ARRAY_A = 'array_a';
+
+    const
+        LOGIN_PATH   = '/services/oauth2/token',
         OBJECT_PATH = 'sobjects/',
         GRANT_TYPE  = 'password';
 
     /**
      * Constructs the SalesforceConnection
-     * 
+     *
      * This sets up the connection to salesforce and instantiates all default variables
-     * 
+     *
      * @param string $instance_url The url to connect to
      * @param string|int $version The version of the API to connect to
-     * @param string $client_key The Consumer Key from Salesforce
+     * @param string $client_id The Consumer Key from Salesforce
      * @param string $client_secret The Consumer Secret from Salesforce
-     */ 
-    public function __construct($instance_url,$version, $client_key, $client_secret)
+     */
+    public function __construct($instance_url,$version, $client_id, $client_secret, $return_type = self::RETURN_OBJECT)
     {
         // Instantiate base variables
         $this->instance_url = $instance_url;
         $this->api_version = $version;
-        $this->client_key = $client_key;
+        $this->client_id = $client_id;
         $this->client_secret = $client_secret;
+        $this->return_type = $return_type;
 
         $this->base_url = $instance_url;
         $this->instance_url = $instance_url . '/services/data/v' . $version . '/';
@@ -64,8 +72,8 @@ class SalesforceAPI {
         if(is_null($this->handle)) {
             $this->handle = curl_init();
             $options = [
-                CURLOPT_SSL_VERIFYPEER => false,
-                CURLOPT_SSL_VERIFYHOST => false,
+//                CURLOPT_SSL_VERIFYPEER => false,
+//                CURLOPT_SSL_VERIFYHOST => false,
                 CURLOPT_CONNECTTIMEOUT => 5,
                 CURLOPT_TIMEOUT => 240,
                 CURLOPT_RETURNTRANSFER => true,
@@ -91,21 +99,45 @@ class SalesforceAPI {
         // Set the login data
         $login_data = [
             'grant_type' => self::GRANT_TYPE,
-            'client_key' => $this->client_key,
+            'client_id' => $this->client_id,
             'client_secret' => $this->client_secret,
             'username' => $username,
             'password' => $password . $security_token
         ];
         // Change the content type to a form
-        $headers = [
-            'Content-Type' => 'application/x-www-form-urlencoded'
-        ];
+//        $headers = [
+//            'Content-Type' => 'application/x-www-form-urlencoded'
+//        ];
 
+        // TODO: Fix this to use the httpRequest function. There is an issue with the curl opt Custom Request
+
+        $ch = curl_init();
+
+        $http_params = http_build_query($login_data);
+
+        curl_setopt($ch, CURLOPT_URL, $this->base_url . '/services/oauth2/token');
+        curl_setopt($ch, CURLOPT_POST, 5);
+        curl_setopt($ch, CURLOPT_HEADER, 1);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $http_params);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array("Content-Type : application/x-www-form-urlencoded"));
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($ch, CURLOPT_SSLVERSION, 4);
+
+        $login = curl_exec($ch);
+        $login = explode("\n", $login);
+        $login = json_decode($login[count($login)-1]);
+        //echo 'Auth response: '; print_r($data); echo '<br/>';
+        curl_close($ch);
         // Send the request
-        $login = $this->httpRequest(self::LOGIN_URL,$login_data, $headers, self::METH_POST);
+//        $login = $this->httpRequest($this->base_url . self::LOGIN_PATH,$login_data, $headers, self::METH_POST);
 
         // Set the access token
+//        if($this->return_type === self::RETURN_OBJECT) {
         $this->access_token = $login->access_token;
+//        } elseif($this->return_type === self::RETURN_ARRAY_A) {
+//            $this->access_token = $login['access_token'];
+//        }
+
 
         // Return the login object
         // TODO: Should this be returned?
@@ -321,21 +353,25 @@ class SalesforceAPI {
 
         // Add any custom fields to the request
         if(isset($params) && $params !== null && !empty($params)) {
-            if($request_headers['Content-Type'] == 'application/json')
-                curl_setopt($this->handle, CURLOPT_POSTFIELDS, json_encode($params));
-            else
-                curl_setopt($this->handle, CURLOPT_POSTFIELDS, http_build_query($params));
+            if($request_headers['Content-Type'] == 'application/json') {
+                $json_params = json_encode($params);
+                curl_setopt($this->handle, CURLOPT_POSTFIELDS, $json_params);
+            } else {
+                $http_params = http_build_query($params);
+                curl_setopt($this->handle, CURLOPT_POSTFIELDS, $http_params);
+            }
+
         }
 
         // Modify the request depending on the type of request
         switch($method)
         {
             case 'POST':
-                curl_setopt($this->handle, CURLOPT_CUSTOMREQUEST, null);
+//                curl_setopt($this->handle, CURLOPT_CUSTOMREQUEST, null);
                 curl_setopt($this->handle, CURLOPT_POST, true);
                 break;
             case 'GET':
-                curl_setopt($this->handle, CURLOPT_CUSTOMREQUEST, null);
+//                curl_setopt($this->handle, CURLOPT_CUSTOMREQUEST, null);
                 curl_setopt($this->handle, CURLOPT_POSTFIELDS, []);
                 curl_setopt($this->handle, CURLOPT_POST, false);
                 if(isset($params) && $params !== null && !empty($params))
@@ -356,12 +392,16 @@ class SalesforceAPI {
 
         $result = json_decode($response);
 
-        return $result;
+        if($this->return_type === self::RETURN_OBJECT) {
+            return $result;
+        } elseif($this->return_type === self::RETURN_ARRAY_A) {
+            return $this->objectToArray($result);
+        }
     }
 
     /**
      * Makes the header array have the right format for the Salesforce API
-     * 
+     *
      * @param $headers
      * @return array
      */
@@ -376,7 +416,7 @@ class SalesforceAPI {
 
     /**
      * Checks for errors in a request
-     * 
+     *
      * @param string $response The response from the server
      * @param Resource $handle The CURL handle
      * @return string The response from the API
@@ -393,7 +433,7 @@ class SalesforceAPI {
         switch($request_info['http_code']) {
             case 304:
                 if($response === '')
-                   return json_encode(['message' => 'The requested object has not changed since the specified time']);
+                    return json_encode(['message' => 'The requested object has not changed since the specified time']);
                 break;
             case 300:
             case 200:
@@ -419,6 +459,32 @@ class SalesforceAPI {
     }
 
 
+}
+
+abstract class APIAbstract {
+    /**
+     * Converts objects returned into arrays.
+     * This is necessary when returning complex objects.
+     * For example, an object returned from a search using a cross-object reference cannot be displayed using methods to display simple objects...
+     *   /api/task/search?fields=project:name
+     *   /api/task/search?fields=DE:Parameter Name
+     * both contain colons, which will result in a stdClass error when using the methods to reference simple objects.
+     * The function below provides a way to convert the 'project:name' object into a usuable array
+     *   i.e. $task['project:name'] can be used by placing the returned object into the function
+     *
+     */
+    function objectToArray ( $object )
+    {
+        if( !is_object( $object ) && !is_array( $object ) )
+        {
+            return $object;
+        }
+        if( is_object( $object ) )
+        {
+            $object = get_object_vars( $object );
+        }
+        return array_map( array($this, 'objectToArray'), $object );
+    }
 }
 
 class SalesforceAPIException extends Exception {}
