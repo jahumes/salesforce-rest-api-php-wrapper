@@ -306,6 +306,23 @@ class SalesforceAPI extends APIAbstract {
         return $this->request($path,$search_data,self::METH_GET);
     }
 
+    public function getQueryFromUrl($query)
+    {
+        // Throw an error if no access token
+        if(!isset($this->access_token))
+            throw new SalesforceAPIException('You have not logged in yet.');
+
+        // Set the Authorization header
+        $request_headers = [
+            'Authorization' => 'Bearer ' . $this->access_token
+        ];
+
+        // Merge all the headers
+        $request_headers = array_merge($request_headers, []);
+
+        return $this->httpRequest( $this->base_url .$query,[],$request_headers);
+    }
+
     /**
      * Makes a request to the API using the access key
      *
